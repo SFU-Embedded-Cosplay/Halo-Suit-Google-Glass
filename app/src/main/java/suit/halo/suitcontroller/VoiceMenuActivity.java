@@ -33,8 +33,6 @@ import java.util.Set;
 
 public class VoiceMenuActivity extends Activity implements SensorEventListener
 {
-    private static final float INVALID_YAW = 10;
-    private long cumulativeYaw = 0;
 
     private Sensor mSensor;
     private int mLastAccuracy;
@@ -58,13 +56,16 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
 
     private Thread connectToHostThread, beagleBoneReceivingThread, batteryStateThread;
 
-    private long lastYaw = -1;
+    private int numButtons = 5;
+    private int quadrants = 3;
+    private int totalQuadrants = numButtons * quadrants;
     private long lastSelectedButton = -1;
     private int selectedButton = 1;
     private int[] selectedButtonState = new int[5];
 
     private SoundPool soundPool;
     private int volume;
+
 
 
     @Override
@@ -106,6 +107,8 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
         soundPool = new SoundPool(4, AudioManager.STREAM_MUSIC, 0);
         soundPool.load(this, R.raw.shield_off, 1);
         soundPool.load(this, R.raw.shield_on, 1);
+
+
     }
 
     private class ConnectToHostThread extends Thread
@@ -137,7 +140,6 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
 
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         mSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
-        lastYaw = -1;
         mSensorManager.registerListener(this, mSensor, SENSOR_RATE_uS);
 
         mAdapter = BluetoothAdapter.getDefaultAdapter();
@@ -556,7 +558,6 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
     {
         float[] mat = new float[9],
                 orientation = new float[3];
-        long position, old;
 
         if(mLastAccuracy == SensorManager.SENSOR_STATUS_UNRELIABLE)
         {
@@ -566,40 +567,39 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
         SensorManager.getRotationMatrixFromVector(mat, event.values);
         SensorManager.getOrientation(mat, orientation);
         double yaw = (orientation[0] + Math.PI) * 100000;
-        long intYaw = (int) yaw;
+        int intYaw = (int) yaw;
 
-        if(lastYaw == INVALID_YAW)
-        {
-            lastYaw = intYaw;
-            lastSelectedButton = selectedButton;
-        }
+////
+        int quadrantNum =  intYaw / ((int) (Math.PI * 2 * 100000)/ totalQuadrants);
+        int buttonNumIndex = quadrantNum % 5;
 
-        long difference = lastYaw - intYaw;
-
-        lastYaw = intYaw;
-
-        if(Math.abs(difference) < 1000)//ignore wrapAround
+        switch (buttonNumIndex)
         {
-            cumulativeYaw += difference;
-        }
-
-        if(cumulativeYaw > 18000)
-        {
-            selectedButton--;
-            cumulativeYaw = 0;
-        }
-        else if(cumulativeYaw < -18000)
-        {
-            selectedButton++;
-            cumulativeYaw = 0;
-        }
-        if(selectedButton > getCount())
-        {
-            selectedButton--;
-        }
-        if(selectedButton < 1)
-        {
-            selectedButton++;
+            case 0:
+            {
+                selectedButton = 1;
+                break;
+            }
+            case 1:
+            {
+                selectedButton = 2;
+                break;
+            }
+            case 2:
+            {
+                selectedButton = 3;
+                break;
+            }
+            case 3:
+            {
+                selectedButton = 4;
+                break;
+            }
+            case 4:
+            {
+                selectedButton = 5;
+                break;
+            }
         }
         if(selectedButton != lastSelectedButton)
         {

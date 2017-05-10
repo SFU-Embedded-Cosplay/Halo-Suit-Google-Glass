@@ -48,6 +48,9 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
     private LinearLayout blink1, blink2, blink3, blink4, blink5;
     private ImageView blinkOn1, blinkOn2, blinkOn3, blinkOn4, blinkOn5;
 
+    private ImageView energyBar, healthBar;
+    private ImageView headTemp, torsoTemp, lowerTemp;
+
     private BluetoothDevice mDevice;
     private BluetoothSocket mSocket;
 
@@ -101,6 +104,13 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
         blinkOn4 = (ImageView) findViewById(R.id.coolingButton);
         blinkOn5 = (ImageView) findViewById(R.id.lightsButton);
 
+        energyBar = (ImageView) findViewById(R.id.energyBar);
+        healthBar = (ImageView) findViewById(R.id.healthBar);
+
+        headTemp = (ImageView) findViewById(R.id.headIcon);
+        torsoTemp = (ImageView) findViewById(R.id.torsoIcon);
+        lowerTemp = (ImageView) findViewById(R.id.lowerIcon);
+
         AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         volume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
 
@@ -121,7 +131,6 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
                 Method m = mDevice.getClass().getMethod("createRfcommSocket", new Class[]{int.class});
                 mSocket = (BluetoothSocket) m.invoke(mDevice, Constants.DEVICE_CHANNEL);
                 mSocket.connect();
-
                 beagleBoneReceivingThread = new BeagleBoneReceivingThread();
                 beagleBoneReceivingThread.start();
             } catch (Exception e)
@@ -261,10 +270,10 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
                     {
                         temp4 = jsonObject.getDouble("water temperature");
                     }
-                    if(jsonObject.has("water temperature"))
+                    /*if(jsonObject.has("water temperature"))
                     {
                         temp4 = jsonObject.getDouble("water temperature");
-                    }
+                    }*/
 
                     if(jsonObject.has("8 AH battery"))
                     {

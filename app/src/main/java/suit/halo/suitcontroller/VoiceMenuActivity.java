@@ -3,6 +3,7 @@ package suit.halo.suitcontroller;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
 import android.content.Context;
 import android.content.Intent;
@@ -16,6 +17,7 @@ import android.media.AudioManager;
 import android.media.SoundPool;
 import android.os.BatteryManager;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -30,6 +32,7 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.Set;
+import java.util.UUID;
 
 public class VoiceMenuActivity extends Activity implements SensorEventListener
 {
@@ -70,6 +73,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
     private int volume;
 
 
+    private static final UUID insecureUUID = UUID.fromString("8ce255c0-200a-11e0-ac64-0800200c9a66");
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -77,7 +81,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
         super.onCreate(savedInstanceState);
         setContentView(R.layout.voice_menu);
 
-        Constants.initializeConstants();
+//        Constants.initializeConstants();
 
         mEyeGestureManager = EyeGestureManager.from(this);
         mWinkEyeGestureListener = new WinkEyeGestureListener();
@@ -118,24 +122,47 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
         soundPool.load(this, R.raw.shield_off, 1);
         soundPool.load(this, R.raw.shield_on, 1);
 
-
     }
 
     private class ConnectToHostThread extends Thread
     {
+        private final BluetoothServerSocket mmServerSocket;
+        public ConnectToHostThread() {
+            BluetoothServerSocket tmp = null;
+            try {
+                tmp = mAdapter.listenUsingInsecureRfcommWithServiceRecord("Connection", insecureUUID);
+            } catch (IOException e) {
+                Log.d("D", "failed to create listenUsingInsecureRfcommWithServiceRecord");
+            }
+            mmServerSocket = tmp;
+        }
         @Override
         public void run()
         {
             try
             {
-                Method m = mDevice.getClass().getMethod("createRfcommSocket", new Class[]{int.class});
-                mSocket = (BluetoothSocket) m.invoke(mDevice, Constants.DEVICE_CHANNEL);
-                mSocket.connect();
-                beagleBoneReceivingThread = new BeagleBoneReceivingThread();
-                beagleBoneReceivingThread.start();
-            } catch (Exception e)
+                mSocket = mmServerSocket.accept();
+            } catch (IOException e)
             {
+                Log.d("D", "mmServerSocket.accept() to mSocket has failed;");
                 int x = 1;
+            }
+
+            beagleBoneReceivingThread = new BeagleBoneReceivingThread();
+            beagleBoneReceivingThread.start();
+
+            try {
+                mmServerSocket.close();
+            } catch (IOException e) {
+                Log.d("D", "mmServerSocket.close() failed;");
+            }
+        }
+        // don't know if needed
+        public void cancel() {
+            try {
+                mmServerSocket.close();
+            } catch (IOException e) {
+
             }
         }
     }
@@ -310,14 +337,35 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
                                 if(temp1 < 666)
                                 {
                                     temp1Text.setText(String.format("H: %.1f", temp1));
+                                    if(temp1 < 25 && temp1 > 0)
+                                    {
+                                        headTemp.setImageDrawable(getResources().getDrawable(R.drawable.head_state));
+                                    } else
+                                    {
+                                        headTemp.setImageDrawable(getResources().getDrawable(R.drawable.head_state_warm));
+                                    }
                                 }
                                 if(temp2 < 666)
                                 {
                                     temp2Text.setText(String.format("A: %.1f", temp2));
+                                    if(temp2 < 25 && temp2 > 0)
+                                    {
+                                        torsoTemp.setImageDrawable(getResources().getDrawable(R.drawable.torso_state));
+                                    } else
+                                    {
+                                        torsoTemp.setImageDrawable(getResources().getDrawable(R.drawable.torso_state_warm));
+                                    }
                                 }
                                 if(temp3 < 666)
                                 {
                                     temp3Text.setText(String.format("C: %.1f", temp3));
+                                    if(temp3 < 25 && temp3 > 0)
+                                    {
+                                        lowerTemp.setImageDrawable(getResources().getDrawable(R.drawable.lower_state));
+                                    } else
+                                    {
+                                        lowerTemp.setImageDrawable(getResources().getDrawable(R.drawable.lower_state_warm));
+                                    }
                                 }
                                 if(temp4 < 666)
                                 {
@@ -326,10 +374,28 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
                                 if(batt1 < 666)
                                 {
                                     batt1Text.setText(String.format(" 8 AH battery: %d", batt1));
+                                    if (batt1 > 75) {
+                                        healthBar.setImageDrawable(getResources().getDrawable(R.drawable.health_bar));
+                                    } else if (batt1 > 50) {
+                                        healthBar.setImageDrawable(getResources().getDrawable(R.drawable.health_bar_75));
+                                    } else if (batt1 > 25) {
+                                        healthBar.setImageDrawable(getResources().getDrawable(R.drawable.health_bar_50));
+                                    } else  {
+                                        healthBar.setImageDrawable(getResources().getDrawable(R.drawable.health_bar_25));
+                                    }
                                 }
                                 if(batt2 < 666)
                                 {
                                     batt2Text.setText(String.format(" 2 AH battery: %d", batt2));
+                                    if (batt2 > 75) {
+                                        energyBar.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar));
+                                    } else if (batt2 > 50) {
+                                        energyBar.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar_75));
+                                    } else if (batt2 > 25) {
+                                        energyBar.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar_50));
+                                    } else  {
+                                        energyBar.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar_25));
+                                    }
                                 }
                                 if(temp4 < 666)
                                 {
@@ -718,6 +784,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
         }
         else
         {
+
             blinkOn1.setBackground(getResources().getDrawable(R.drawable.voice_on));
             selectedButtonState[0] = 0;
             processCommand("voice on", 0);

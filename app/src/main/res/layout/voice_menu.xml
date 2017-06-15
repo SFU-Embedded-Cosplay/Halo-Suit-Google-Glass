@@ -154,7 +154,7 @@
                 android:layout_height="wrap_content">
 
                 <ImageView
-                    android:src="@drawable/head_state_warm"
+                    android:src="@drawable/head_state"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:id="@+id/headIcon"
@@ -168,7 +168,7 @@
                 android:layout_height="66px">
 
                 <ImageView
-                    android:src="@drawable/torso_state_warm"
+                    android:src="@drawable/torso_state"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:id="@+id/torsoIcon"
@@ -182,7 +182,7 @@
                 android:layout_height="90px">
 
                 <ImageView
-                    android:src="@drawable/lower_state_warm"
+                    android:src="@drawable/lower_state"
                     android:layout_width="match_parent"
                     android:id="@+id/lowerIcon"
                     android:cropToPadding="false"

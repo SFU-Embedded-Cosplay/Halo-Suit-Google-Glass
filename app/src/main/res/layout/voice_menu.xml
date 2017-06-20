@@ -15,30 +15,24 @@
         android:id="@+id/barLayout">
 
         <LinearLayout
-            android:orientation="vertical"
             android:layout_width="match_parent"
-            android:layout_height="35px">
+            android:layout_height="match_parent"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="70px"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"></LinearLayout>
 
             <ImageView
-                android:layout_width="match_parent"
+                android:id="@+id/bars"
+                android:layout_width="500px"
                 android:layout_height="match_parent"
-                android:id="@+id/energyBar"
                 android:adjustViewBounds="false"
+                android:background="@drawable/health_bar"
+                android:scaleType="fitXY"
                 android:src="@drawable/energy_bar" />
 
-        </LinearLayout>
-
-        <LinearLayout
-            android:orientation="vertical"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent">
-
-            <ImageView
-                android:src="@drawable/health_bar"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:id="@+id/healthBar"
-                android:adjustViewBounds="false" />
         </LinearLayout>
 
     </LinearLayout>

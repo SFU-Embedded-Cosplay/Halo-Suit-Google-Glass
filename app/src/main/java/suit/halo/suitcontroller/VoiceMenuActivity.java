@@ -17,6 +17,7 @@ import android.media.AudioManager;
 import android.media.SoundPool;
 import android.os.BatteryManager;
 import android.os.Bundle;
+import android.os.CountDownTimer;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.widget.ImageView;
@@ -30,17 +31,20 @@ import com.google.android.glass.eye.EyeGestureManager.Listener;
 import org.json.JSONObject;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.util.Set;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
-public class VoiceMenuActivity extends Activity implements SensorEventListener
-{
+public class VoiceMenuActivity extends Activity implements SensorEventListener {
+
 
     private Sensor mSensor;
     private int mLastAccuracy;
     private SensorManager mSensorManager;
-    private static final int SENSOR_RATE_uS = 400000;
+    private static final int SENSOR_RATE_uS = 10000000;
 
 
     private EyeGestureManager mEyeGestureManager;
@@ -51,7 +55,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
     private LinearLayout blink1, blink2, blink3, blink4, blink5;
     private ImageView blinkOn1, blinkOn2, blinkOn3, blinkOn4, blinkOn5;
 
-    private ImageView energyBar, healthBar;
+    private ImageView bars;
     private ImageView headTemp, torsoTemp, lowerTemp;
 
     private BluetoothDevice mDevice;
@@ -62,11 +66,15 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
 
     private Thread connectToHostThread, beagleBoneReceivingThread, batteryStateThread;
 
-    private int numButtons = 5;
-    private int quadrants = 3;
-    private int totalQuadrants = numButtons * quadrants;
+    private Timer timer;
+    private static final int YAW_MULTIPLIER = 10000;
+    private static final int numButtons = 5;
+    private static final int quadrants = 2;
+    private static final int totalSpaces = numButtons * quadrants * 2; // * 2 for spaces inbetween
     private long lastSelectedButton = -1;
     private int selectedButton = 1;
+    private static final int filterWindowSize = 15;
+    private BlockingQueue<Integer> unfilteredRotationData = new LinkedBlockingQueue<>(filterWindowSize);
     private int[] selectedButtonState = new int[5];
 
     private SoundPool soundPool;
@@ -76,8 +84,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
     private static final UUID insecureUUID = UUID.fromString("8ce255c0-200a-11e0-ac64-0800200c9a66");
 
     @Override
-    protected void onCreate(Bundle savedInstanceState)
-    {
+    protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.voice_menu);
 
@@ -108,8 +115,8 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
         blinkOn4 = (ImageView) findViewById(R.id.coolingButton);
         blinkOn5 = (ImageView) findViewById(R.id.lightsButton);
 
-        energyBar = (ImageView) findViewById(R.id.energyBar);
-        healthBar = (ImageView) findViewById(R.id.healthBar);
+        bars = (ImageView) findViewById(R.id.bars);
+
 
         headTemp = (ImageView) findViewById(R.id.headIcon);
         torsoTemp = (ImageView) findViewById(R.id.torsoIcon);
@@ -124,9 +131,9 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
 
     }
 
-    private class ConnectToHostThread extends Thread
-    {
+    private class ConnectToHostThread extends Thread {
         private final BluetoothServerSocket mmServerSocket;
+
         public ConnectToHostThread() {
             BluetoothServerSocket tmp = null;
             try {
@@ -136,14 +143,12 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
             }
             mmServerSocket = tmp;
         }
+
         @Override
-        public void run()
-        {
-            try
-            {
+        public void run() {
+            try {
                 mSocket = mmServerSocket.accept();
-            } catch (IOException e)
-            {
+            } catch (IOException e) {
                 Log.d("D", "mmServerSocket.accept() to mSocket has failed;");
                 int x = 1;
             }
@@ -157,6 +162,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
                 Log.d("D", "mmServerSocket.close() failed;");
             }
         }
+
         // don't know if needed
         public void cancel() {
             try {
@@ -168,27 +174,24 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
     }
 
     @Override
-    protected void onStart()
-    {
+    protected void onStart() {
         super.onStart();
 
         mEyeGestureManager.register(winkGesture, mWinkEyeGestureListener);
 
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         mSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
-        mSensorManager.registerListener(this, mSensor, SENSOR_RATE_uS);
+        mSensorManager.registerListener(this, mSensor, SensorManager.SENSOR_DELAY_UI);
+        mSensorManager.flush(this);
 
         mAdapter = BluetoothAdapter.getDefaultAdapter();
         mAdapter.enable();
 
-        try
-        {
+        try {
             mPairedDevices = mAdapter.getBondedDevices();
-            for (BluetoothDevice mDevice : mPairedDevices)
-            {
+            for (BluetoothDevice mDevice : mPairedDevices) {
                 String deviceName = mDevice.getName();
-                if(deviceName.equals(Constants.DEVICE_IDENTIFIER))
-                {
+                if (deviceName.equals(Constants.DEVICE_IDENTIFIER)) {
                     this.mDevice = mDevice;
                 }
             }
@@ -197,56 +200,46 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
             connectToHostThread.start();
             batteryStateThread = new BatteryStateThread();
             batteryStateThread.start();
-        } catch (Exception e)
-        {
+        } catch (Exception e) {
             int x = 1;
         }
     }
 
     @Override
-    protected void onStop()
-    {
+    protected void onStop() {
         super.onStop();
+        mSensorManager.unregisterListener(this, mSensor);
         mEyeGestureManager.unregister(winkGesture, mWinkEyeGestureListener);
         beagleBoneReceivingThread.stop();
         batteryStateThread.stop();
-        try
-        {
+        try {
             mSocket.close();
             mAdapter.disable();
-        } catch (IOException e)
-        {
+        } catch (IOException e) {
         }
     }
 
     @Override
-    protected void onResume()
-    {
+    protected void onResume() {
         super.onResume();
     }
 
     @Override
-    protected void onPause()
-    {
+    protected void onPause() {
         super.onPause();
     }
 
-    private class WinkEyeGestureListener implements Listener
-    {
+    private class WinkEyeGestureListener implements Listener {
 
         @Override
-        public void onEnableStateChange(EyeGesture eyeGesture, boolean paramBoolean)
-        {
+        public void onEnableStateChange(EyeGesture eyeGesture, boolean paramBoolean) {
         }
 
         @Override
-        public void onDetected(final EyeGesture eyeGesture)
-        {
-            runOnUiThread(new Runnable()
-            {
+        public void onDetected(final EyeGesture eyeGesture) {
+            runOnUiThread(new Runnable() {
                 @Override
-                public void run()
-                {
+                public void run() {
                     winkOnButton();
                 }
             });
@@ -255,8 +248,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
     }
 
 
-    private class BeagleBoneReceivingThread extends Thread
-    {
+    private class BeagleBoneReceivingThread extends Thread {
         private byte[] bytes;
         private double temp1 = 666;
         private double temp2 = 666;
@@ -268,33 +260,28 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
         private int batt3 = 666;
         private int batt4 = 666;
 
+        private int dist1 = 666;
+
         boolean lowbat = false;
 
         @Override
-        public void run()
-        {
-            while (true)
-            {
-                try
-                {
+        public void run() {
+            while (true) {
+                try {
 
                     bytes = new byte[1024];
                     int i = mSocket.getInputStream().read(bytes);
                     JSONObject jsonObject = new JSONObject(new String(bytes));
-                    if(jsonObject.has("head temperature"))
-                    {
+                    if (jsonObject.has("head temperature")) {
                         temp1 = jsonObject.getDouble("head temperature");
                     }
-                    if(jsonObject.has("armpits temperature"))
-                    {
+                    if (jsonObject.has("armpits temperature")) {
                         temp2 = jsonObject.getDouble("armpits temperature");
                     }
-                    if(jsonObject.has("crotch temperature"))
-                    {
+                    if (jsonObject.has("crotch temperature")) {
                         temp3 = jsonObject.getDouble("crotch temperature");
                     }
-                    if(jsonObject.has("water temperature"))
-                    {
+                    if (jsonObject.has("water temperature")) {
                         temp4 = jsonObject.getDouble("water temperature");
                     }
                     /*if(jsonObject.has("water temperature"))
@@ -302,115 +289,95 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
                         temp4 = jsonObject.getDouble("water temperature");
                     }*/
 
-                    if(jsonObject.has("8 AH battery"))
-                    {
+                    if (jsonObject.has("8 AH battery")) {
                         batt1 = jsonObject.getInt("8 AH battery");
                     }
-                    if(jsonObject.has("2 AH battery"))
-                    {
+                    if (jsonObject.has("2 AH battery")) {
                         batt2 = jsonObject.getInt("2 AH battery");
                     }
-                    if(jsonObject.has("hud battery"))
-                    {
+                    if (jsonObject.has("hud battery")) {
                         batt3 = jsonObject.getInt("hud battery");
                     }
-                    if(jsonObject.has("phone battery"))
-                    {
+                    if (jsonObject.has("phone battery")) {
                         batt4 = jsonObject.getInt("phone battery");
                     }
-                    if(jsonObject.has("warnings"))
-                    {
+                    if (jsonObject.has("warnings")) {
                         JSONObject warnings = jsonObject.getJSONObject("warnings");
-                        if(warnings.has("low 8AH battery warning")||(warnings.has("low 2AH battery warning")))
-                        {
-                            SoundMessageHandler.handleSoundMessage("low_bat",soundPool,volume);
+                        if (warnings.has("low 8AH battery warning") || (warnings.has("low 2AH battery warning"))) {
+                            SoundMessageHandler.handleSoundMessage("low_bat", soundPool, volume);
                         }
                     }
+                    if (jsonObject.has("ultrasonic")) {
+                        dist1 = jsonObject.getInt("ultrasonic");
+                    }
 
-                    if(i != -1)
-                    {
-                        runOnUiThread(new Runnable()
-                        {
+                    if (i != -1) {
+                        runOnUiThread(new Runnable() {
                             @Override
-                            public void run()
-                            {
-                                if(temp1 < 666)
-                                {
+                            public void run() {
+                                if (temp1 < 666) {
                                     temp1Text.setText(String.format("H: %.1f", temp1));
-                                    if(temp1 < 25 && temp1 > 0)
-                                    {
+                                    if (temp1 < 25 && temp1 > 0) {
                                         headTemp.setImageDrawable(getResources().getDrawable(R.drawable.head_state));
-                                    } else
-                                    {
+                                    } else {
                                         headTemp.setImageDrawable(getResources().getDrawable(R.drawable.head_state_warm));
                                     }
                                 }
-                                if(temp2 < 666)
-                                {
+                                if (temp2 < 666) {
                                     temp2Text.setText(String.format("A: %.1f", temp2));
-                                    if(temp2 < 25 && temp2 > 0)
-                                    {
+                                    if (temp2 < 25 && temp2 > 0) {
                                         torsoTemp.setImageDrawable(getResources().getDrawable(R.drawable.torso_state));
-                                    } else
-                                    {
+                                    } else {
                                         torsoTemp.setImageDrawable(getResources().getDrawable(R.drawable.torso_state_warm));
                                     }
                                 }
-                                if(temp3 < 666)
-                                {
+                                if (temp3 < 666) {
                                     temp3Text.setText(String.format("C: %.1f", temp3));
-                                    if(temp3 < 25 && temp3 > 0)
-                                    {
+                                    if (temp3 < 25 && temp3 > 0) {
                                         lowerTemp.setImageDrawable(getResources().getDrawable(R.drawable.lower_state));
-                                    } else
-                                    {
+                                    } else {
                                         lowerTemp.setImageDrawable(getResources().getDrawable(R.drawable.lower_state_warm));
                                     }
                                 }
-                                if(temp4 < 666)
-                                {
+                                if (temp4 < 666) {
                                     temp4Text.setText(String.format("W: %.1f", temp4));
                                 }
-                                if(batt1 < 666)
-                                {
+                                if (batt1 < 666) {
                                     batt1Text.setText(String.format(" 8 AH battery: %d", batt1));
                                     if (batt1 > 75) {
-                                        healthBar.setImageDrawable(getResources().getDrawable(R.drawable.health_bar));
+                                        bars.setBackground(getResources().getDrawable(R.drawable.health_bar));
                                     } else if (batt1 > 50) {
-                                        healthBar.setImageDrawable(getResources().getDrawable(R.drawable.health_bar_75));
+                                        bars.setBackground(getResources().getDrawable(R.drawable.health_bar_75));
                                     } else if (batt1 > 25) {
-                                        healthBar.setImageDrawable(getResources().getDrawable(R.drawable.health_bar_50));
-                                    } else  {
-                                        healthBar.setImageDrawable(getResources().getDrawable(R.drawable.health_bar_25));
+                                        bars.setBackground(getResources().getDrawable(R.drawable.health_bar_50));
+                                    } else {
+                                        bars.setBackground(getResources().getDrawable(R.drawable.health_bar_25));
                                     }
                                 }
-                                if(batt2 < 666)
-                                {
+                                if (batt2 < 666) {
                                     batt2Text.setText(String.format(" 2 AH battery: %d", batt2));
                                     if (batt2 > 75) {
-                                        energyBar.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar));
+                                        bars.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar));
                                     } else if (batt2 > 50) {
-                                        energyBar.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar_75));
+                                        bars.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar_75));
                                     } else if (batt2 > 25) {
-                                        energyBar.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar_50));
-                                    } else  {
-                                        energyBar.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar_25));
+                                        bars.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar_50));
+                                    } else {
+                                        bars.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar_25));
                                     }
                                 }
-                                if(temp4 < 666)
-                                {
+                                if (temp4 < 666) {
                                     batt3Text.setText(String.format("  Hud battery: %d", batt3));
                                 }
-                                if(temp4 < 666)
-                                {
+                                if (temp4 < 666) {
                                     batt4Text.setText(String.format("Phone battery: %d", batt4));
                                 }
+
                             }
                         });
                     }
 
-                } catch (Exception e)
-                {
+                } catch (Exception e) {
 
                 }
 
@@ -418,23 +385,18 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
         }
     }
 
-    private class BatteryStateThread extends Thread
-    {
+    private class BatteryStateThread extends Thread {
         @Override
-        public void run()
-        {
-            while (true)
-            {
-                try
-                {
+        public void run() {
+            while (true) {
+                try {
                     IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
                     Intent batteryStatus = registerReceiver(null, ifilter);
                     int charge = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
 
                     processCommand("sendBatteryState", charge);
                     Thread.sleep(20000, 0);
-                } catch (Exception e)
-                {
+                } catch (Exception e) {
                     int x = 1;
                 }
             }
@@ -442,91 +404,71 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
     }
 
     @Override
-    public boolean onTouchEvent(MotionEvent event)
-    {
+    public boolean onTouchEvent(MotionEvent event) {
         return true;
     }
 
-    public void processCommand(String command, int charge)
-    {
-        switch (command)
-        {
-            case "lights on":
-            {
-                try
-                {
+    public void processCommand(String command, int charge) {
+        switch (command) {
+            case "lights on": {
+                try {
                     JSONObject j = new JSONObject();
                     j.put("lights", "on");
                     j.put("play sound", "lights");
                     mSocket.getOutputStream().write(j.toString().getBytes());
-                } catch (Exception e)
-                {
+                } catch (Exception e) {
 
                 }
             }
             break;
-            case "lights off":
-            {
-                try
-                {
+            case "lights off": {
+                try {
                     JSONObject j = new JSONObject();
                     j.put("lights", "off");
                     j.put("play sound", "lights");
                     mSocket.getOutputStream().write(j.toString().getBytes());
-                } catch (Exception e)
-                {
+                } catch (Exception e) {
 
                 }
             }
             break;
-            case "lights auto":
-            {
-                try
-                {
+            case "lights auto": {
+                try {
                     JSONObject j = new JSONObject();
                     j.put("lights", "auto");
                     j.put("play sound", "lights");
                     mSocket.getOutputStream().write(j.toString().getBytes());
-                } catch (Exception e)
-                {
+                } catch (Exception e) {
 
                 }
             }
             break;
-            case "head lights on":
-            {
-                try
-                {
+            case "head lights on": {
+                try {
                     JSONObject j = new JSONObject();
                     j.put("head lights red", "on");
                     j.put("head lights white", "on");
                     j.put("play sound", "lights");
                     mSocket.getOutputStream().write(j.toString().getBytes());
-                } catch (Exception e)
-                {
+                } catch (Exception e) {
 
                 }
             }
             break;
-            case "head lights off":
-            {
-                try
-                {
+            case "head lights off": {
+                try {
                     JSONObject j = new JSONObject();
                     j.put("head lights red", "off");
                     j.put("head lights white", "off");
                     j.put("play sound", "lights");
                     mSocket.getOutputStream().write(j.toString().getBytes());
-                } catch (Exception e)
-                {
+                } catch (Exception e) {
 
                 }
             }
             break;
-            case "cooling on":
-            {
-                try
-                {
+            case "cooling on": {
+                try {
                     JSONObject j = new JSONObject();
                     j.put("peltier", "on");
                     j.put("water fan", "on");
@@ -534,16 +476,13 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
                     j.put("head fans", "on");
                     j.put("play sound", "shield_on");
                     mSocket.getOutputStream().write(j.toString().getBytes());
-                } catch (Exception e)
-                {
+                } catch (Exception e) {
 
                 }
             }
             break;
-            case "cooling off":
-            {
-                try
-                {
+            case "cooling off": {
+                try {
                     JSONObject j = new JSONObject();
                     j.put("peltier", "off");
                     j.put("water fan", "off");
@@ -551,75 +490,59 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
                     j.put("head fans", "off");
                     j.put("play sound", "shield_off");
                     mSocket.getOutputStream().write(j.toString().getBytes());
-                } catch (Exception e)
-                {
+                } catch (Exception e) {
 
                 }
             }
             break;
-            case "sendBatteryState":
-            {
-                try
-                {
+            case "sendBatteryState": {
+                try {
                     JSONObject j = new JSONObject();
                     j.put("hud battery", charge);
                     mSocket.getOutputStream().write(j.toString().getBytes());
-                } catch (Exception e)
-                {
+                } catch (Exception e) {
                     int x = 1;
                 }
             }
             break;
 
-            case "voice on":
-            {
-                try
-                {
+            case "voice on": {
+                try {
                     JSONObject j = new JSONObject();
                     j.put("play sound", "voice_on");
                     mSocket.getOutputStream().write(j.toString().getBytes());
-                } catch (Exception e)
-                {
+                } catch (Exception e) {
 
                 }
             }
             break;
-            case "voice off":
-            {
-                try
-                {
+            case "voice off": {
+                try {
                     JSONObject j = new JSONObject();
                     j.put("play sound", "voice_off");
                     mSocket.getOutputStream().write(j.toString().getBytes());
-                } catch (Exception e)
-                {
+                } catch (Exception e) {
 
                 }
             }
             break;
 
-            case "audio on":
-            {
-                try
-                {
+            case "audio on": {
+                try {
                     JSONObject j = new JSONObject();
                     j.put("play sound", "audio_on");
                     mSocket.getOutputStream().write(j.toString().getBytes());
-                } catch (Exception e)
-                {
+                } catch (Exception e) {
 
                 }
             }
             break;
-            case "audio off":
-            {
-                try
-                {
+            case "audio off": {
+                try {
                     JSONObject j = new JSONObject();
                     j.put("play sound", "audio_off");
                     mSocket.getOutputStream().write(j.toString().getBytes());
-                } catch (Exception e)
-                {
+                } catch (Exception e) {
 
                 }
             }
@@ -629,161 +552,163 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
 
 
     @Override
-    public void onSensorChanged(SensorEvent event)
-    {
+    public void onSensorChanged(SensorEvent event) {
         float[] mat = new float[9],
                 orientation = new float[3];
 
-        if(mLastAccuracy == SensorManager.SENSOR_STATUS_UNRELIABLE)
-        {
+        if (mLastAccuracy == SensorManager.SENSOR_STATUS_UNRELIABLE) {
             return;
         }
 
         SensorManager.getRotationMatrixFromVector(mat, event.values);
         SensorManager.getOrientation(mat, orientation);
-        double yaw = (orientation[0] + Math.PI) * 100000;
+        double yaw = (orientation[0] + Math.PI) * YAW_MULTIPLIER;
         int intYaw = (int) yaw;
+        int filteredData = 0;
 
-////
-        int quadrantNum =  intYaw / ((int) (Math.PI * 2 * 100000)/ totalQuadrants);
-        int buttonNumIndex = quadrantNum % 5;
 
-        switch (buttonNumIndex)
+        if (unfilteredRotationData.remainingCapacity() < 1) {
+            unfilteredRotationData.remove();
+        }
+
+        //filter out data that would cause a jump of 3 spaces
+        if (Math.abs(intYaw - filteredData) / ((Math.PI * 2 * YAW_MULTIPLIER) / totalSpaces) < 3)
         {
-            case 0:
-            {
+            unfilteredRotationData.add(intYaw);
+        }
+
+        //low-pass filter data
+        for (int value : unfilteredRotationData) {
+            filteredData += value;
+        }
+        filteredData /= unfilteredRotationData.size();
+        Log.i("FilteredData", "Value of filtered data: " + filteredData);
+
+        ////This line converts 2pi * YAW_MULTIPLIER into 0 to totalSpaces
+        int quadrantNum = filteredData / ((int) (Math.PI * 2 * YAW_MULTIPLIER) / totalSpaces);
+        ////This line converts quadrantNum(from 0 to totalSpaces) into a number from 0 to numButtons * 2 repeated in quadrants (*2 for spaces between)
+        int buttonNumIndex = quadrantNum % (numButtons * 2);
+
+        switch (buttonNumIndex) {
+            case 0: {
                 selectedButton = 1;
                 break;
             }
-            case 1:
-            {
+            case 1: {
+                break;
+            }
+            case 2: {
                 selectedButton = 2;
                 break;
             }
-            case 2:
-            {
+            case 3: {
+                break;
+            }
+            case 4: {
                 selectedButton = 3;
                 break;
             }
-            case 3:
-            {
+            case 5: {
+                break;
+            }
+            case 6: {
                 selectedButton = 4;
                 break;
             }
-            case 4:
-            {
+            case 7: {
+                break;
+            }
+            case 8: {
                 selectedButton = 5;
                 break;
             }
         }
-        if(selectedButton != lastSelectedButton)
-        {
+        if (selectedButton != lastSelectedButton) {
             lastSelectedButton = selectedButton;
             highlightButton(selectedButton);
         }
     }
 
+
     @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy)
-    {
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {
         mLastAccuracy = accuracy;
     }
 
-    private int getCount()
-    {//number of blink buttons
+    private int getCount() {//number of blink buttons
         return 5;
     }
 
-    private void highlightButton(int buttonNum)
-    {
+    private void highlightButton(int buttonNum) {
         blink1.setBackgroundColor(Color.TRANSPARENT);
         blink2.setBackgroundColor(Color.TRANSPARENT);
         blink3.setBackgroundColor(Color.TRANSPARENT);
         blink4.setBackgroundColor(Color.TRANSPARENT);
         blink5.setBackgroundColor(Color.TRANSPARENT);
 
-        switch (buttonNum)
-        {
-            case 1:
-            {
+        switch (buttonNum) {
+            case 1: {
                 blink1.setBackgroundColor(Color.GRAY);
                 break;
             }
-            case 2:
-            {
+            case 2: {
                 blink2.setBackgroundColor(Color.GRAY);
                 break;
             }
-            case 3:
-            {
+            case 3: {
                 blink3.setBackgroundColor(Color.GRAY);
                 break;
             }
-            case 4:
-            {
+            case 4: {
                 blink4.setBackgroundColor(Color.GRAY);
                 break;
             }
-            case 5:
-            {
+            case 5: {
                 blink5.setBackgroundColor(Color.GRAY);
                 break;
             }
-            default:
-            {
+            default: {
                 int shouldntHappen = 1;
                 break;
             }
         }
     }
 
-    private void winkOnButton()
-    {
-        switch (selectedButton)
-        {
-            case 1:
-            {
+    private void winkOnButton() {
+        switch (selectedButton) {
+            case 1: {
                 winkOnVoiceButton();
                 break;
             }
-            case 2:
-            {
+            case 2: {
                 winkOnSoundButton();
                 break;
             }
-            case 3:
-            {
+            case 3: {
                 winkOnHeadLightsButton();
                 break;
             }
-            case 4:
-            {
+            case 4: {
                 winkOnCoolingButton();
                 break;
             }
-            case 5:
-            {
+            case 5: {
                 winkOnLightsButton();
                 break;
             }
-            default:
-            {
+            default: {
                 int shouldntHappen = 1;
                 break;
             }
         }
     }
 
-    private void winkOnVoiceButton()
-    {
-        if(selectedButtonState[0] == 0)
-        {
+    private void winkOnVoiceButton() {
+        if (selectedButtonState[0] == 0) {
             blinkOn1.setBackground(getResources().getDrawable(R.drawable.voice_off));
             selectedButtonState[0] = 1;
             processCommand("voice off", 0);
-        }
-        else
-        {
+        } else {
 
             blinkOn1.setBackground(getResources().getDrawable(R.drawable.voice_on));
             selectedButtonState[0] = 0;
@@ -791,70 +716,52 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener
         }
     }
 
-    private void winkOnSoundButton()
-    {
-        if(selectedButtonState[1] == 0)
-        {
+    private void winkOnSoundButton() {
+        if (selectedButtonState[1] == 0) {
             blinkOn2.setBackground(getResources().getDrawable(R.drawable.audio_off));
             selectedButtonState[1] = 1;
             processCommand("audio off", 0);
-        }
-        else
-        {
+        } else {
             blinkOn2.setBackground(getResources().getDrawable(R.drawable.audio_on));
             selectedButtonState[1] = 0;
             processCommand("audio on", 0);
         }
     }
 
-    private void winkOnHeadLightsButton()
-    {
-        if(selectedButtonState[2] == 0)
-        {
+    private void winkOnHeadLightsButton() {
+        if (selectedButtonState[2] == 0) {
             blinkOn3.setBackground(getResources().getDrawable(R.drawable.head_lights_off));
             selectedButtonState[2] = 1;
             processCommand("head lights off", 1);
-        }
-        else
-        {
+        } else {
             blinkOn3.setBackground(getResources().getDrawable(R.drawable.head_lights));
             selectedButtonState[2] = 0;
             processCommand("head lights on", 1);
         }
     }
 
-    private void winkOnCoolingButton()
-    {
-        if(selectedButtonState[3] == 0)
-        {
+    private void winkOnCoolingButton() {
+        if (selectedButtonState[3] == 0) {
             blinkOn4.setBackground(getResources().getDrawable(R.drawable.cooling_off));
             selectedButtonState[3] = 1;
             processCommand("cooling off", 0);
-        }
-        else
-        {
+        } else {
             blinkOn4.setBackground(getResources().getDrawable(R.drawable.cooling_on));
             selectedButtonState[3] = 0;
             processCommand("cooling on", 0);
         }
     }
 
-    private void winkOnLightsButton()
-    {
-        if(selectedButtonState[4] == 0)
-        {
+    private void winkOnLightsButton() {
+        if (selectedButtonState[4] == 0) {
             blinkOn5.setBackground(getResources().getDrawable(R.drawable.lights_auto));
             selectedButtonState[4] = 1;
             processCommand("lights auto", 0);
-        }
-        else if(selectedButtonState[4] == 1)
-        {
+        } else if (selectedButtonState[4] == 1) {
             blinkOn5.setBackground(getResources().getDrawable(R.drawable.lights_off));
             selectedButtonState[4] = 2;
             processCommand("lights off", 0);
-        }
-        else
-        {
+        } else {
             blinkOn5.setBackground(getResources().getDrawable(R.drawable.lights_on));
             selectedButtonState[4] = 0;
             processCommand("lights on", 0);

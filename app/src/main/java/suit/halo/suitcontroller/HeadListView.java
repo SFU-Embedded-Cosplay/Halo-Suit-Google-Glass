@@ -20,7 +20,7 @@ public class HeadListView extends ListView implements SensorEventListener
     private int mLastAccuracy;
     private SensorManager mSensorManager;
     private float mStartX = INVALID_X;
-    private static final int SENSOR_RATE_uS = 400000;
+    private static final int SENSOR_RATE_uS = 10000000;
     private static final float VELOCITY = (float) (Math.PI / 180 * 12); // scroll one item per 2°
 
     private boolean canScroll;

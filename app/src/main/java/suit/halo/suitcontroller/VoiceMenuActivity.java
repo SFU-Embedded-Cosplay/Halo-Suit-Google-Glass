@@ -73,7 +73,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
     private static final int totalSpaces = numButtons * quadrants * 2; // * 2 for spaces inbetween
     private long lastSelectedButton = -1;
     private int selectedButton = 1;
-    private static final int filterWindowSize = 15;
+    private static final int filterWindowSize = 10;
     private BlockingQueue<Integer> unfilteredRotationData = new LinkedBlockingQueue<>(filterWindowSize);
     private int[] selectedButtonState = new int[5];
 
@@ -230,7 +230,10 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
     }
 
     private class WinkEyeGestureListener implements Listener {
-
+// TODO: Fix these errors
+        /*07-03 15:08:02.464 506-749/? E/GazeService:MultiDurWinkDetector: Invalid detector index: -1.
+          07-03 15:08:02.464 506-749/? E/GazeService:MultiDurWinkDetector: Can not get active detector.
+        */
         @Override
         public void onEnableStateChange(EyeGesture eyeGesture, boolean paramBoolean) {
         }
@@ -572,10 +575,9 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
         }
 
         //filter out data that would cause a jump of 3 spaces
-        if (Math.abs(intYaw - filteredData) / ((Math.PI * 2 * YAW_MULTIPLIER) / totalSpaces) < 3)
-        {
+
             unfilteredRotationData.add(intYaw);
-        }
+
 
         //low-pass filter data
         for (int value : unfilteredRotationData) {

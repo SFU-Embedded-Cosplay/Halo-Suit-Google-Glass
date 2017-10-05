@@ -15,9 +15,9 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.media.AudioManager;
 import android.media.SoundPool;
+import android.nfc.Tag;
 import android.os.BatteryManager;
 import android.os.Bundle;
-import android.os.CountDownTimer;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.widget.ImageView;
@@ -31,6 +31,7 @@ import com.google.android.glass.eye.EyeGestureManager.Listener;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -39,12 +40,12 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
 public class VoiceMenuActivity extends Activity implements SensorEventListener {
+    public static final String TAG = "LOG_TAG_VOICE_MENU";
 
-
+    private Intent intent;
     private Sensor mSensor;
     private int mLastAccuracy;
     private SensorManager mSensorManager;
-    private static final int SENSOR_RATE_uS = 10000000;
 
 
     private EyeGestureManager mEyeGestureManager;
@@ -66,10 +67,9 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
 
     private Thread connectToHostThread, beagleBoneReceivingThread, batteryStateThread;
 
-    private Timer timer;
     private static final int YAW_MULTIPLIER = 10000;
     private static final int numButtons = 5;
-    private static final int quadrants = 2;
+    private static final int quadrants = 1;
     private static final int totalSpaces = numButtons * quadrants * 2; // * 2 for spaces inbetween
     private long lastSelectedButton = -1;
     private int selectedButton = 1;
@@ -87,7 +87,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.voice_menu);
-
+        intent = getIntent();
 //        Constants.initializeConstants();
 
         mEyeGestureManager = EyeGestureManager.from(this);
@@ -132,37 +132,64 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
     }
 
     private class ConnectToHostThread extends Thread {
-        private final BluetoothServerSocket mmServerSocket;
-
+        private BluetoothServerSocket mmServerSocket = null;
         public ConnectToHostThread() {
-            BluetoothServerSocket tmp = null;
-            try {
-                tmp = mAdapter.listenUsingInsecureRfcommWithServiceRecord("Connection", insecureUUID);
-            } catch (IOException e) {
-                Log.d("D", "failed to create listenUsingInsecureRfcommWithServiceRecord");
+            if(intent.getStringExtra(BluetoothMenu.intentSocketTag).equals("DemoApp")){
+                BluetoothServerSocket tmp = null;
+                try {
+                    tmp = mAdapter.listenUsingInsecureRfcommWithServiceRecord("Connection", insecureUUID);
+                } catch (IOException e) {
+                    Log.d(TAG, "failed to create listenUsingInsecureRfcommWithServiceRecord");
+                }
+                mmServerSocket = tmp;
             }
-            mmServerSocket = tmp;
+            else {
+                BluetoothSocket tmpBluesocket = null;
+                try {
+                    Log.d(TAG, "getting the bluetoothdevice in the intent");
+                    BluetoothDevice tmpDevice = getIntent().getExtras().getParcelable("BLUETOOTH_TAG");
+                    Log.d(TAG, "getting the uuid of the device");
+                    Log.d(TAG, tmpDevice.getUuids().toString());
+                    Log.d(TAG, "running createRfcommSocketToServiceRecord with the uuid");
+                    tmpBluesocket = tmpDevice.createRfcommSocketToServiceRecord(tmpDevice.getUuids()[0].getUuid());
+                } catch (Exception e) {
+                    Log.d(TAG, "configuring with \"createRfcommSocket\" has thrown an exception : " + e.toString());
+                }
+                Log.d(TAG, "Connection status: " + String.valueOf(mSocket.isConnected()));
+                mSocket = tmpBluesocket;
+            }
         }
 
         @Override
         public void run() {
-            try {
-                mSocket = mmServerSocket.accept();
-            } catch (IOException e) {
-                Log.d("D", "mmServerSocket.accept() to mSocket has failed;");
-                int x = 1;
+            if(intent.getStringExtra(BluetoothMenu.intentSocketTag).equals("DemoApp")) {
+                try {
+                    mSocket = mmServerSocket.accept();
+                } catch (Exception e) {
+                    Log.d(TAG, "mmServerSocket.accept() to mSocket has failed with " + e.toString());
+                    int x = 1;
+                }
+                try {
+                    mmServerSocket.close();
+                } catch (Exception e) {
+                    Log.d(TAG, "mmServerSocket.close() failed with " + e.toString());
+                }
             }
-
+            else {
+                try {
+                    mSocket.connect();
+                } catch (Exception e) {
+                    Log.d(TAG, "mSocket.connect() failed with " + e.toString());
+                    try {
+                        mSocket.close();
+                    } catch (Exception e1) {
+                        Log.d(TAG, "mSocket.close() failed with " + e1.toString());
+                    }
+                }
+            }
             beagleBoneReceivingThread = new BeagleBoneReceivingThread();
             beagleBoneReceivingThread.start();
-
-            try {
-                mmServerSocket.close();
-            } catch (IOException e) {
-                Log.d("D", "mmServerSocket.close() failed;");
-            }
         }
-
         // don't know if needed
         public void cancel() {
             try {
@@ -230,10 +257,6 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
     }
 
     private class WinkEyeGestureListener implements Listener {
-// TODO: Fix these errors
-        /*07-03 15:08:02.464 506-749/? E/GazeService:MultiDurWinkDetector: Invalid detector index: -1.
-          07-03 15:08:02.464 506-749/? E/GazeService:MultiDurWinkDetector: Can not get active detector.
-        */
         @Override
         public void onEnableStateChange(EyeGesture eyeGesture, boolean paramBoolean) {
         }
@@ -271,7 +294,6 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
         public void run() {
             while (true) {
                 try {
-
                     bytes = new byte[1024];
                     int i = mSocket.getInputStream().read(bytes);
                     JSONObject jsonObject = new JSONObject(new String(bytes));
@@ -287,11 +309,6 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
                     if (jsonObject.has("water temperature")) {
                         temp4 = jsonObject.getDouble("water temperature");
                     }
-                    /*if(jsonObject.has("water temperature"))
-                    {
-                        temp4 = jsonObject.getDouble("water temperature");
-                    }*/
-
                     if (jsonObject.has("8 AH battery")) {
                         batt1 = jsonObject.getInt("8 AH battery");
                     }
@@ -379,11 +396,9 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
                             }
                         });
                     }
-
                 } catch (Exception e) {
 
                 }
-
             }
         }
     }
@@ -586,9 +601,9 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
         filteredData /= unfilteredRotationData.size();
         Log.i("FilteredData", "Value of filtered data: " + filteredData);
 
-        ////This line converts 2pi * YAW_MULTIPLIER into 0 to totalSpaces
+        ////This converts 2pi * YAW_MULTIPLIER into 0 to totalSpaces
         int quadrantNum = filteredData / ((int) (Math.PI * 2 * YAW_MULTIPLIER) / totalSpaces);
-        ////This line converts quadrantNum(from 0 to totalSpaces) into a number from 0 to numButtons * 2 repeated in quadrants (*2 for spaces between)
+        ////This converts quadrantNum into a number from 0 to numButtons * 2 repeated in quadrants (*2 for spaces between)
         int buttonNumIndex = quadrantNum % (numButtons * 2);
 
         switch (buttonNumIndex) {
@@ -711,7 +726,6 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
             selectedButtonState[0] = 1;
             processCommand("voice off", 0);
         } else {
-
             blinkOn1.setBackground(getResources().getDrawable(R.drawable.voice_on));
             selectedButtonState[0] = 0;
             processCommand("voice on", 0);

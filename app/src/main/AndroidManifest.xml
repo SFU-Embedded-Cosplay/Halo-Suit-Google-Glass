@@ -15,21 +15,31 @@
         android:label="@string/app_name">
 
         <activity
-            android:name="VoiceMenuActivity"
+            android:name=".BluetoothMenu"
             android:icon="@drawable/ic_glass_logo"
             android:label="@string/title_activity_suit_control">
 
             <intent-filter>
-                <action android:name="com.google.android.glass.action.VOICE_TRIGGER"/>
-            </intent-filter>
-            <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-
+            <intent-filter>
+                <action android:name="com.google.android.glass.action.VOICE_TRIGGER"/>
+            </intent-filter>
             <meta-data
                 android:name="com.google.android.glass.VoiceTrigger"
                 android:resource="@xml/voice_trigger"/>
+        </activity>
+        <activity
+            android:name="VoiceMenuActivity"
+            android:parentActivityName=".BluetoothMenu">
+
+
+
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".BluetoothMenu" />
+
         </activity>
     </application>
 

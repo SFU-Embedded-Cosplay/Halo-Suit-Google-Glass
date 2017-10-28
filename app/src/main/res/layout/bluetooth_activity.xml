@@ -14,10 +14,16 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_weight="0.17"
-        android:text="TextView" />
+        android:text="Tap the side to display the list" />
 
     <TextView
         android:id="@+id/deviceChoice"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_weight="0.17" />
+
+    <TextView
+        android:id="@+id/DeviceUUID"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_weight="0.17" />

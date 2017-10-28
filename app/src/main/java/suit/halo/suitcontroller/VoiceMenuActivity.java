@@ -15,7 +15,6 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.media.AudioManager;
 import android.media.SoundPool;
-import android.nfc.Tag;
 import android.os.BatteryManager;
 import android.os.Bundle;
 import android.util.Log;
@@ -31,16 +30,13 @@ import com.google.android.glass.eye.EyeGestureManager.Listener;
 import org.json.JSONObject;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.util.Set;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
 public class VoiceMenuActivity extends Activity implements SensorEventListener {
-    public static final String TAG = "LOG_TAG_VOICE_MENU";
+    public static final String TAG = "LOG_VOICE_MENU";
 
     private Intent intent;
     private Sensor mSensor;
@@ -61,6 +57,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
 
     private BluetoothDevice mDevice;
     private BluetoothSocket mSocket;
+    private BluetoothSocket mSocket2;
 
     private BluetoothAdapter mAdapter;
     private Set<BluetoothDevice> mPairedDevices;
@@ -80,15 +77,14 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
     private SoundPool soundPool;
     private int volume;
 
-
+//  A common UUID for serial port bluetooth "00001101-0000-1000-8000-00805f9b34fb"
     private static final UUID insecureUUID = UUID.fromString("8ce255c0-200a-11e0-ac64-0800200c9a66");
-
+    private static final UUID blueToothSerialUUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.voice_menu);
         intent = getIntent();
-//        Constants.initializeConstants();
 
         mEyeGestureManager = EyeGestureManager.from(this);
         mWinkEyeGestureListener = new WinkEyeGestureListener();
@@ -134,6 +130,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
     private class ConnectToHostThread extends Thread {
         private BluetoothServerSocket mmServerSocket = null;
         public ConnectToHostThread() {
+            //configure Connection as a server
             if(intent.getStringExtra(BluetoothMenu.intentSocketTag).equals("DemoApp")){
                 BluetoothServerSocket tmp = null;
                 try {
@@ -143,19 +140,30 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
                 }
                 mmServerSocket = tmp;
             }
+            //configure as a client
             else {
                 BluetoothSocket tmpBluesocket = null;
                 try {
                     Log.d(TAG, "getting the bluetoothdevice in the intent");
                     BluetoothDevice tmpDevice = getIntent().getExtras().getParcelable("BLUETOOTH_TAG");
                     Log.d(TAG, "getting the uuid of the device");
-                    Log.d(TAG, tmpDevice.getUuids().toString());
+                    Log.d(TAG, tmpDevice.getUuids()[0].toString());
                     Log.d(TAG, "running createRfcommSocketToServiceRecord with the uuid");
-                    tmpBluesocket = tmpDevice.createRfcommSocketToServiceRecord(tmpDevice.getUuids()[0].getUuid());
+                    tmpBluesocket = tmpDevice.createInsecureRfcommSocketToServiceRecord(tmpDevice.getUuids()[0].getUuid());
+                    /*
+                    Using the common bluetooth serial port uuid
+                    tmpBluesocket = tmp.Device.createInsecureRfcommSocketToserviceRecord(bluetoothserialUUID);
+                    */
                 } catch (Exception e) {
                     Log.d(TAG, "configuring with \"createRfcommSocket\" has thrown an exception : " + e.toString());
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            batt1Text.setText("getUUIDs");
+                            batt2Text.setText("did not work");
+                        }
+                    });
                 }
-                Log.d(TAG, "Connection status: " + String.valueOf(mSocket.isConnected()));
                 mSocket = tmpBluesocket;
             }
         }
@@ -179,11 +187,11 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
                 try {
                     mSocket.connect();
                 } catch (Exception e) {
-                    Log.d(TAG, "mSocket.connect() failed with " + e.toString());
+                    Log.d(TAG, "mSocket.connect() to selected device failed with " + e.toString());
                     try {
                         mSocket.close();
                     } catch (Exception e1) {
-                        Log.d(TAG, "mSocket.close() failed with " + e1.toString());
+                        Log.d(TAG, "mSocket.close() to selected device failed with " + e1.toString());
                     }
                 }
             }
@@ -222,13 +230,13 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
                     this.mDevice = mDevice;
                 }
             }
-
             connectToHostThread = new ConnectToHostThread();
             connectToHostThread.start();
             batteryStateThread = new BatteryStateThread();
             batteryStateThread.start();
         } catch (Exception e) {
-            int x = 1;
+            Log.d(TAG, "onStart(); has failed with " + e.toString());
+
         }
     }
 

@@ -27,9 +27,13 @@ public class BluetoothMenu extends Activity{
 
     private ArrayList<BluetoothDevice> nearbyDiscoverableDevices;
     private ArrayList<String> discoveredDeviceNameList;
+    private ArrayList<String> deviceUUIDList;
+
     private int discoveredDeviceChoice;
     private TextView selectedDeviceNameView;
     private TextView numDevicesView;
+    private TextView deviceUUID;
+
     BluetoothAdapter mBluetoothAdapter;
     private WinkGestureListener mWinkGestureListener;
     private EyeGestureManager mEyeGestureManager;
@@ -45,11 +49,14 @@ public class BluetoothMenu extends Activity{
 
         nearbyDiscoverableDevices = new ArrayList<BluetoothDevice>();
         discoveredDeviceNameList = new ArrayList<String>();
+        deviceUUIDList = new ArrayList<String>();
         // Choosing  device 0 will tell the VoiceMenuActivity to configure the bluetooth socket with the DemoApp
         discoveredDeviceNameList.add("Use the DemoApp");
-        discoveredDeviceChoice = 0;
+        discoveredDeviceChoice = -1;
         selectedDeviceNameView = (TextView) findViewById(R.id.deviceChoice);
         numDevicesView = (TextView) findViewById(R.id.numDevice);
+        deviceUUID = (TextView) findViewById(R.id.DeviceUUID);
+
         mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         mEyeGestureManager = EyeGestureManager.from(this);
         mWinkGestureListener = new WinkGestureListener();
@@ -63,8 +70,13 @@ public class BluetoothMenu extends Activity{
     @Override
     public boolean onKeyDown(int keycode, KeyEvent event) {
         if (keycode == KeyEvent.KEYCODE_DPAD_CENTER) {
-            numDevicesView.setText(String.valueOf(discoveredDeviceChoice +1) + " out of " + String.valueOf(discoveredDeviceNameList.size()));
-            updateChoiceText(true);
+                if(discoveredDeviceChoice >= discoveredDeviceNameList.size()-1){
+                    discoveredDeviceChoice = 0;
+                }
+                else {
+                    discoveredDeviceChoice++;
+                }
+            updateChoiceText();
             return true;
         }
         return super.onKeyDown(keycode, event);
@@ -89,14 +101,12 @@ public class BluetoothMenu extends Activity{
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
             if (BluetoothDevice.ACTION_FOUND.equals(action)) {
-                // Discovery has found a device. Get the BluetoothDevice
-                // object and its info from the Intent.
                 BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                 Log.d(TAG, "ACTION_FOUND Device name: " + String.valueOf(device.getName()));
                 Log.d(TAG, "ACTION_FOUND Device UUID: " + device.getUuids()[0].getUuid().toString());
                 nearbyDiscoverableDevices.add(device);
                 discoveredDeviceNameList.add(device.getName());
-                updateChoiceText(false);
+                deviceUUIDList.add(device.getUuids()[0].toString());
             }
         }
     };
@@ -111,36 +121,30 @@ public class BluetoothMenu extends Activity{
         }
     }
 
-    public void updateChoiceText(boolean goToNextDevice) {
-        if(goToNextDevice) {
-            if(discoveredDeviceChoice >= discoveredDeviceNameList.size()-1){
-                discoveredDeviceChoice = 0;
-                selectedDeviceNameView.setText(discoveredDeviceNameList.get(discoveredDeviceChoice));
-            }
-            else {
-                discoveredDeviceChoice++;
-                selectedDeviceNameView.setText(discoveredDeviceNameList.get(discoveredDeviceChoice));
-            }
-        }
-        numDevicesView.setText(String.valueOf(discoveredDeviceChoice +1) + " out of " + String.valueOf(discoveredDeviceNameList.size()));
+    public void updateChoiceText() {
+        selectedDeviceNameView.setText(discoveredDeviceNameList.get(discoveredDeviceChoice));
+        deviceUUID.setText(deviceUUIDList.get(discoveredDeviceChoice));
+        numDevicesView.setText(String.valueOf(discoveredDeviceChoice + 1) + " out of " + String.valueOf(discoveredDeviceNameList.size()));
 
     }
 
     public void changeToDisplay() {
         mEyeGestureManager.unregister(winkGesture, mWinkGestureListener);
         Intent intent = new Intent(this, VoiceMenuActivity.class);
-        if(discoveredDeviceChoice == 0) {
-            String message = "DemoApp";
-            intent.putExtra(intentSocketTag, message);
-            Log.d("INTENT","DemoApp in Intent");
+        if(discoveredDeviceChoice != -1) {
+            if(discoveredDeviceChoice == 0) {
+                String message = "DemoApp";
+                intent.putExtra(intentSocketTag, message);
+                Log.d("INTENT_LOG","DemoApp in Intent");
+            }
+            else {
+                BluetoothDevice selectedDevice = nearbyDiscoverableDevices.get(discoveredDeviceChoice);
+                String message = "BeagleBone";
+                Log.d("INTENT_LOG", "BeagleBone in Intent");
+                intent.putExtra(intentSocketTag, message);
+                intent.putExtra(bluetoothDeviceTag, selectedDevice);
+            }
+            startActivity(intent);
         }
-        else {
-            BluetoothDevice selectedDevice = nearbyDiscoverableDevices.get(discoveredDeviceChoice);
-            String message = "BeagleBone";
-            Log.d("INTENT", "BeagleBone in Intent");
-            intent.putExtra(intentSocketTag, message);
-            intent.putExtra(bluetoothDeviceTag, selectedDevice);
-        }
-        startActivity(intent);
     }
 }

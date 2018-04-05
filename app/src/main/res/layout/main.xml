@@ -6,12 +6,12 @@
 	android:layout_gravity="center_vertical|center_horizontal|center"
     android:keepScreenOn="true">
 
-    <TextView
-    	android:id="@+id/textView"
-    	android:layout_width="fill_parent"
-    	android:layout_height="fill_parent"
-    	android:layout_gravity="center"
-    	android:textSize="40sp"
-        android:background="@drawable/unsc"/>
+	<TextView
+		android:id="@+id/deviceTextView"
+		android:layout_width="fill_parent"
+		android:layout_height="fill_parent"
+		android:layout_gravity="center"
+		android:background="@drawable/unsc"
+		android:textSize="40sp" />
 
 </FrameLayout>

@@ -27,20 +27,15 @@ public class BluetoothMenu extends Activity{
 
     private ArrayList<BluetoothDevice> nearbyDiscoverableDevices;
     private ArrayList<String> discoveredDeviceNameList;
-    private ArrayList<String> deviceUUIDList;
 
     private int discoveredDeviceChoice;
     private TextView selectedDeviceNameView;
     private TextView numDevicesView;
-    private TextView deviceUUID;
 
     BluetoothAdapter mBluetoothAdapter;
     private WinkGestureListener mWinkGestureListener;
     private EyeGestureManager mEyeGestureManager;
     private EyeGesture winkGesture = EyeGesture.WINK;
-
-
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,13 +44,13 @@ public class BluetoothMenu extends Activity{
 
         nearbyDiscoverableDevices = new ArrayList<BluetoothDevice>();
         discoveredDeviceNameList = new ArrayList<String>();
-        deviceUUIDList = new ArrayList<String>();
+
         // Choosing  device 0 will tell the VoiceMenuActivity to configure the bluetooth socket with the DemoApp
         discoveredDeviceNameList.add("Use the DemoApp");
+        // set so you cannot change activities unless you tap at least once
         discoveredDeviceChoice = -1;
         selectedDeviceNameView = (TextView) findViewById(R.id.deviceChoice);
         numDevicesView = (TextView) findViewById(R.id.numDevice);
-        deviceUUID = (TextView) findViewById(R.id.DeviceUUID);
 
         mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         mEyeGestureManager = EyeGestureManager.from(this);
@@ -93,23 +88,27 @@ public class BluetoothMenu extends Activity{
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        mBluetoothAdapter.cancelDiscovery();
         unregisterReceiver(mReceiver);
         mEyeGestureManager.unregister(winkGesture,mWinkGestureListener);
     }
 
-    private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if (BluetoothDevice.ACTION_FOUND.equals(action)) {
-                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-                Log.d(TAG, "ACTION_FOUND Device name: " + String.valueOf(device.getName()));
-                Log.d(TAG, "ACTION_FOUND Device UUID: " + device.getUuids()[0].getUuid().toString());
-                nearbyDiscoverableDevices.add(device);
-                discoveredDeviceNameList.add(device.getName());
-                deviceUUIDList.add(device.getUuids()[0].toString());
+    private final BroadcastReceiver mReceiver = getBroadcastReceiver();
+
+    private BroadcastReceiver getBroadcastReceiver() {
+        return new BroadcastReceiver() {
+            public void onReceive(Context context, Intent intent) {
+                String action = intent.getAction();
+                if (BluetoothDevice.ACTION_FOUND.equals(action)) {
+                    BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                    Log.d(TAG, "ACTION_FOUND Device name: " + String.valueOf(device.getName()));
+                    nearbyDiscoverableDevices.add(device);
+                    discoveredDeviceNameList.add(device.getName());
+                    numDevicesView.setText(String.valueOf(discoveredDeviceChoice + 1) + " out of " + String.valueOf(discoveredDeviceNameList.size()));
+                }
             }
-        }
-    };
+        };
+    }
 
     private class WinkGestureListener implements EyeGestureManager.Listener {
         @Override
@@ -122,28 +121,26 @@ public class BluetoothMenu extends Activity{
     }
 
     public void updateChoiceText() {
-        selectedDeviceNameView.setText(discoveredDeviceNameList.get(discoveredDeviceChoice));
-        deviceUUID.setText(deviceUUIDList.get(discoveredDeviceChoice));
-        numDevicesView.setText(String.valueOf(discoveredDeviceChoice + 1) + " out of " + String.valueOf(discoveredDeviceNameList.size()));
+        try {
+            selectedDeviceNameView.setText(discoveredDeviceNameList.get(discoveredDeviceChoice));
+            numDevicesView.setText(String.valueOf(discoveredDeviceChoice + 1) + " out of " + String.valueOf(discoveredDeviceNameList.size()));
+        } catch (Exception e) {
+
+        }
 
     }
 
     public void changeToDisplay() {
-        mEyeGestureManager.unregister(winkGesture, mWinkGestureListener);
-        Intent intent = new Intent(this, VoiceMenuActivity.class);
         if(discoveredDeviceChoice != -1) {
+            Intent intent = new Intent(this, VoiceMenuActivity.class);
             if(discoveredDeviceChoice == 0) {
-                String message = "DemoApp";
-                intent.putExtra(intentSocketTag, message);
-                Log.d("INTENT_LOG","DemoApp in Intent");
+                BluetoothDeviceManager.getInstance().setDevice(null);
             }
             else {
-                BluetoothDevice selectedDevice = nearbyDiscoverableDevices.get(discoveredDeviceChoice);
-                String message = "BeagleBone";
-                Log.d("INTENT_LOG", "BeagleBone in Intent");
-                intent.putExtra(intentSocketTag, message);
-                intent.putExtra(bluetoothDeviceTag, selectedDevice);
+                BluetoothDeviceManager.getInstance().setDevice(nearbyDiscoverableDevices.get(discoveredDeviceChoice));
             }
+            mEyeGestureManager.unregister(winkGesture, mWinkGestureListener);
+            mBluetoothAdapter.cancelDiscovery();
             startActivity(intent);
         }
     }

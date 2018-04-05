@@ -30,6 +30,7 @@ import com.google.android.glass.eye.EyeGestureManager.Listener;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
@@ -76,9 +77,9 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
 
     private SoundPool soundPool;
     private int volume;
-
-//  A common UUID for serial port bluetooth "00001101-0000-1000-8000-00805f9b34fb"
+    //
     private static final UUID insecureUUID = UUID.fromString("8ce255c0-200a-11e0-ac64-0800200c9a66");
+//  A common UUID for serial port bluetooth "00001101-0000-1000-8000-00805f9b34fb"
     private static final UUID blueToothSerialUUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -130,6 +131,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
     private class ConnectToHostThread extends Thread {
         private BluetoothServerSocket mmServerSocket = null;
         public ConnectToHostThread() {
+
             //configure Connection as a server
             if(intent.getStringExtra(BluetoothMenu.intentSocketTag).equals("DemoApp")){
                 BluetoothServerSocket tmp = null;
@@ -144,16 +146,12 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
             else {
                 BluetoothSocket tmpBluesocket = null;
                 try {
-                    Log.d(TAG, "getting the bluetoothdevice in the intent");
                     BluetoothDevice tmpDevice = getIntent().getExtras().getParcelable("BLUETOOTH_TAG");
-                    Log.d(TAG, "getting the uuid of the device");
-                    Log.d(TAG, tmpDevice.getUuids()[0].toString());
-                    Log.d(TAG, "running createRfcommSocketToServiceRecord with the uuid");
-                    tmpBluesocket = tmpDevice.createInsecureRfcommSocketToServiceRecord(tmpDevice.getUuids()[0].getUuid());
-                    /*
-                    Using the common bluetooth serial port uuid
-                    tmpBluesocket = tmp.Device.createInsecureRfcommSocketToserviceRecord(bluetoothserialUUID);
-                    */
+                    //tmpBluesocket = tmpDevice.createInsecureRfcommSocketToServiceRecord(tmpDevice.getUuids()[0].getUuid());
+                    //Using the common bluetooth serial port uuid
+                    tmpBluesocket = tmpDevice.createInsecureRfcommSocketToServiceRecord(blueToothSerialUUID);
+                    Method m = tmpDevice.getClass().getMethod("createRfcommSocket", new Class[]{int.class});
+                    mSocket = (BluetoothSocket) m.invoke(tmpDevice, 2);
                 } catch (Exception e) {
                     Log.d(TAG, "configuring with \"createRfcommSocket\" has thrown an exception : " + e.toString());
                     runOnUiThread(new Runnable() {

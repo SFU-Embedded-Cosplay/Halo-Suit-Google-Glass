@@ -3,6 +3,7 @@ package suit.halo.suitcontroller;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
 import android.content.Context;
 import android.content.Intent;
@@ -16,6 +17,7 @@ import android.media.AudioManager;
 import android.media.SoundPool;
 import android.os.BatteryManager;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -30,6 +32,9 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 import butterknife.BindView;
 
@@ -38,7 +43,6 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
     private Sensor mSensor;
     private int mLastAccuracy;
     private SensorManager mSensorManager;
-    private static final int SENSOR_RATE_uS = 400000;
 
     private EyeGestureManager mEyeGestureManager;
     private WinkEyeGestureListener mWinkEyeGestureListener;
@@ -87,17 +91,21 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
 
     private BluetoothDevice mDevice;
     private BluetoothSocket mSocket;
+    private BluetoothSocket mSocket2;
 
     private BluetoothAdapter mAdapter;
     private Set<BluetoothDevice> mPairedDevices;
 
     private Thread connectToHostThread, beagleBoneReceivingThread, batteryStateThread;
 
-    private int numButtons = 5;
-    private int quadrants = 3;
-    private int totalQuadrants = numButtons * quadrants;
+    private static final int YAW_MULTIPLIER = 10000;
+    private static final int numButtons = 5;
+    private static final int quadrants = 1;
+    private static final int totalSpaces = numButtons * quadrants * 2; // * 2 for spaces inbetween
     private long lastSelectedButton = -1;
     private int selectedButton = 1;
+    private static final int filterWindowSize = 10;
+    private BlockingQueue<Integer> unfilteredRotationData = new LinkedBlockingQueue<>(filterWindowSize);
     private int[] selectedButtonState = new int[5];
 
     private SoundPool soundPool;
@@ -107,8 +115,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.voice_menu);
-
-        Constants.initializeConstants();
+        intent = getIntent();
 
         mEyeGestureManager = EyeGestureManager.from(this);
         mWinkEyeGestureListener = new WinkEyeGestureListener();
@@ -159,7 +166,6 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
                     this.mDevice = mDevice;
                 }
             }
-
             connectToHostThread = new ConnectToHostThread();
             connectToHostThread.start();
             batteryStateThread = new BatteryStateThread();
@@ -172,6 +178,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
     @Override
     protected void onStop() {
         super.onStop();
+        mSensorManager.unregisterListener(this, mSensor);
         mEyeGestureManager.unregister(winkGesture, mWinkEyeGestureListener);
         beagleBoneReceivingThread.stop();
         batteryStateThread.stop();
@@ -222,6 +229,8 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
         private int batt3 = 666;
         private int batt4 = 666;
 
+        private int dist1 = 666;
+
         boolean lowbat = false;
 
         @Override
@@ -265,6 +274,9 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
                             SoundMessageHandler.handleSoundMessage("low_bat", soundPool, volume);
                         }
                     }
+                    if (jsonObject.has("ultrasonic")) {
+                        dist1 = jsonObject.getInt("ultrasonic");
+                    }
 
                     if (i != -1) {
                         runOnUiThread(new Runnable() {
@@ -272,21 +284,54 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
                             public void run() {
                                 if (temp1 < 666) {
                                     temp1Text.setText(String.format("H: %.1f", temp1));
+                                    if (temp1 < 25 && temp1 > 0) {
+                                        headTemp.setImageDrawable(getResources().getDrawable(R.drawable.head_state));
+                                    } else {
+                                        headTemp.setImageDrawable(getResources().getDrawable(R.drawable.head_state_warm));
+                                    }
                                 }
                                 if (temp2 < 666) {
                                     temp2Text.setText(String.format("A: %.1f", temp2));
+                                    if (temp2 < 25 && temp2 > 0) {
+                                        torsoTemp.setImageDrawable(getResources().getDrawable(R.drawable.torso_state));
+                                    } else {
+                                        torsoTemp.setImageDrawable(getResources().getDrawable(R.drawable.torso_state_warm));
+                                    }
                                 }
                                 if (temp3 < 666) {
                                     temp3Text.setText(String.format("C: %.1f", temp3));
+                                    if (temp3 < 25 && temp3 > 0) {
+                                        lowerTemp.setImageDrawable(getResources().getDrawable(R.drawable.lower_state));
+                                    } else {
+                                        lowerTemp.setImageDrawable(getResources().getDrawable(R.drawable.lower_state_warm));
+                                    }
                                 }
                                 if (temp4 < 666) {
                                     temp4Text.setText(String.format("W: %.1f", temp4));
                                 }
                                 if (batt1 < 666) {
                                     batt1Text.setText(String.format(" 8 AH battery: %d", batt1));
+                                    if (batt1 > 75) {
+                                        bars.setBackground(getResources().getDrawable(R.drawable.health_bar));
+                                    } else if (batt1 > 50) {
+                                        bars.setBackground(getResources().getDrawable(R.drawable.health_bar_75));
+                                    } else if (batt1 > 25) {
+                                        bars.setBackground(getResources().getDrawable(R.drawable.health_bar_50));
+                                    } else {
+                                        bars.setBackground(getResources().getDrawable(R.drawable.health_bar_25));
+                                    }
                                 }
                                 if (batt2 < 666) {
                                     batt2Text.setText(String.format(" 2 AH battery: %d", batt2));
+                                    if (batt2 > 75) {
+                                        bars.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar));
+                                    } else if (batt2 > 50) {
+                                        bars.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar_75));
+                                    } else if (batt2 > 25) {
+                                        bars.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar_50));
+                                    } else {
+                                        bars.setImageDrawable(getResources().getDrawable(R.drawable.energy_bar_25));
+                                    }
                                 }
                                 if (temp4 < 666) {
                                     batt3Text.setText(String.format("  Hud battery: %d", batt3));
@@ -294,13 +339,14 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
                                 if (temp4 < 666) {
                                     batt4Text.setText(String.format("Phone battery: %d", batt4));
                                 }
+
                             }
                         });
                     }
+                } catch (Exception e) {
 
                 } catch (Exception e) {
                 }
-
             }
         }
     }
@@ -481,8 +527,9 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
 
         SensorManager.getRotationMatrixFromVector(mat, event.values);
         SensorManager.getOrientation(mat, orientation);
-        double yaw = (orientation[0] + Math.PI) * 100000;
+        double yaw = (orientation[0] + Math.PI) * YAW_MULTIPLIER;
         int intYaw = (int) yaw;
+        int filteredData = 0;
 
 ////
         int quadrantNum = intYaw / ((int) (Math.PI * 2 * 100000) / totalQuadrants);
@@ -515,6 +562,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
             highlightButton(selectedButton);
         }
     }
+
 
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {

@@ -1,5 +1,6 @@
 package suit.halo.suitcontroller.BluetoothSearch;
 
+import android.app.Fragment;
 import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -25,7 +26,7 @@ import suit.halo.suitcontroller.WinkEyeGestureListener;
  * Created by Michael Wong on 2/10/2018.
  */
 
-public class BluetoothSearchFragment extends android.support.v4.app.Fragment implements WinkEyeGestureListener.WinkEyeGestureFragmentMethod, BluetoothSearchContract.View{
+public class BluetoothSearchFragment extends Fragment implements WinkEyeGestureListener.WinkEyeGestureFragmentMethod, BluetoothSearchContract.View{
 
     private Context mContext;
     private EyeGestureManager mEyeGestureManager;

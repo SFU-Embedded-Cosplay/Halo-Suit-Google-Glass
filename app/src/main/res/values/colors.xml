@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#3F51B5</color>
+    <color name="colorPrimaryDark">#303F9F</color>
+    <color name="colorAccent">#FF4081</color>
+
+    <!--Basic color palette-->
+    <color name="colorBlack">#000000</color>
+    <color name="colorRed">#ff2400</color>
+    <color name="colorGrey">#D3D3D3</color>
+    <color name="colorSilver">#C0C0C0</color>
+    <color name="skyBlue">#00bfff</color>
+    <color name="salmonPink">#ff788c</color>
+    <color name="limeGreen">#C4FD50</color>
+    <!--Text colors-->
+    <color name="greyText">#939393</color>
+    <color name="whiteText">#ffffff</color>
+
+    <!--Element colors-->
+    <color name="colorActiveButtonBlue">#0000FF</color>
+
+    <color name="colorFollowButtonBlue">#65B2F7</color>
+
+    <color name="colorNotificationUnread">#F5F5F5</color>
+    <color name="colorNotificationRead">#FFFFFF</color>
+    <color name="colorNotificationDotFill">#ffff0000</color>
+    <color name="colorNotificationDotOutline">#ff222222</color>
+
+    <color name="transparent">#00000000</color></resources>

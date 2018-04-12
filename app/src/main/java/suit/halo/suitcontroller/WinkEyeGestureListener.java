@@ -1,5 +1,6 @@
 package suit.halo.suitcontroller;
 
+import android.app.Fragment;
 import android.util.Log;
 
 import com.google.android.glass.eye.EyeGesture;
@@ -13,7 +14,7 @@ public class WinkEyeGestureListener implements EyeGestureManager.Listener {
     public static final String TAG  = WinkEyeGestureListener.class.getSimpleName();
     private WinkEyeGestureFragmentMethod mUsingFragment;
 
-    public WinkEyeGestureListener(android.support.v4.app.Fragment fragment) {
+    public WinkEyeGestureListener(Fragment fragment) {
         if (fragment instanceof WinkEyeGestureFragmentMethod) {
             mUsingFragment = (WinkEyeGestureFragmentMethod) fragment;
         } else {

@@ -37,6 +37,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import butterknife.BindView;
+import butterknife.ButterKnife;
 
 public class VoiceMenuActivity extends Activity implements SensorEventListener {
 
@@ -88,6 +89,15 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
     @BindView(R.id.lightsButton)
     ImageView blinkOn5;
 
+    @BindView(R.id.headIcon)
+    ImageView headTemp;
+    @BindView(R.id.torsoIcon)
+    ImageView torsoTemp;
+    @BindView(R.id.lowerIcon)
+    ImageView lowerTemp;
+
+    @BindView(R.id.bars)
+    ImageView bars;
 
     private BluetoothDevice mDevice;
     private BluetoothSocket mSocket;
@@ -101,7 +111,7 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
     private static final int YAW_MULTIPLIER = 10000;
     private static final int numButtons = 5;
     private static final int quadrants = 1;
-    private static final int totalSpaces = numButtons * quadrants * 2; // * 2 for spaces inbetween
+    private static final int totalQuadrants = numButtons * quadrants * 2; // * 2 for spaces inbetween
     private long lastSelectedButton = -1;
     private int selectedButton = 1;
     private static final int filterWindowSize = 10;
@@ -110,13 +120,14 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
 
     private SoundPool soundPool;
     private int volume;
+    private static final UUID insecureUUID = UUID.fromString("8ce255c0-200a-11e0-ac64-0800200c9a66");
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.voice_menu);
-        intent = getIntent();
-
+        Intent intent = getIntent();
+        ButterKnife.bind(this);
         mEyeGestureManager = EyeGestureManager.from(this);
         mWinkEyeGestureListener = new WinkEyeGestureListener();
 
@@ -132,15 +143,30 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
     private class ConnectToHostThread extends Thread {
         @Override
         public void run() {
-            try {
-                Method m = mDevice.getClass().getMethod("createRfcommSocket", new Class[]{int.class});
-                mSocket = (BluetoothSocket) m.invoke(mDevice, Constants.DEVICE_CHANNEL);
-                mSocket.connect();
+            mDevice = BluetoothDeviceManager.getInstance().getBluetoothDevice();
+            if (mDevice == null) {
+                BluetoothServerSocket mmServerSocket = null;
+                try {
+                    mmServerSocket = mAdapter.listenUsingInsecureRfcommWithServiceRecord("Connection", insecureUUID);
+                    mSocket = mmServerSocket.accept();
+                    mmServerSocket.close();
+                    beagleBoneReceivingThread = new BeagleBoneReceivingThread();
+                    beagleBoneReceivingThread.start();
+                } catch (IOException e) {
+                    Log.d("VoiceMenuActivity", "failed to create listenUsingInsecureRfcommWithServiceRecord");
+                }
+            }
+            else {
+                try {
+                    Method m = mDevice.getClass().getMethod("createRfcommSocket", new Class[]{int.class});
+                    mSocket = (BluetoothSocket) m.invoke(mDevice, Constants.DEVICE_CHANNEL);
+                    mSocket.connect();
 
-                beagleBoneReceivingThread = new BeagleBoneReceivingThread();
-                beagleBoneReceivingThread.start();
-            } catch (Exception e) {
-                int x = 1;
+                    beagleBoneReceivingThread = new BeagleBoneReceivingThread();
+                    beagleBoneReceivingThread.start();
+                } catch (Exception e) {
+                    Log.e("ConnectToHostThread", "an exception occurred with beaglebone connection", e);
+                }
             }
         }
     }
@@ -345,7 +371,6 @@ public class VoiceMenuActivity extends Activity implements SensorEventListener {
                     }
                 } catch (Exception e) {
 
-                } catch (Exception e) {
                 }
             }
         }

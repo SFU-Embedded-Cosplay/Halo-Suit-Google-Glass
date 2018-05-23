@@ -1,19 +1,27 @@
 package suit.halo.suitcontroller;
 
 import android.app.Activity;
+import android.app.ProgressDialog;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.widget.TextView;
+import android.widget.Toast;
+
 import com.google.android.glass.eye.EyeGesture;
 import com.google.android.glass.eye.EyeGestureManager;
 import com.google.glass.bluetooth.BluetoothAdapter;
+
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.UUID;
 
 
 /**
@@ -36,6 +44,10 @@ public class BluetoothMenu extends Activity{
     private WinkGestureListener mWinkGestureListener;
     private EyeGestureManager mEyeGestureManager;
     private EyeGesture winkGesture = EyeGesture.WINK;
+
+    static final UUID myUUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    android.bluetooth.BluetoothAdapter myBluetooth = null;
+    BluetoothSocket btSocket = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -132,16 +144,62 @@ public class BluetoothMenu extends Activity{
 
     public void changeToDisplay() {
         if(discoveredDeviceChoice != -1) {
+            Toast.makeText(getApplicationContext(),"Connection started.",Toast.LENGTH_LONG).show();
+
             Intent intent = new Intent(this, VoiceMenuActivity.class);
             if(discoveredDeviceChoice == 0) {
-                BluetoothDeviceManager.getInstance().setDevice(null);
+                Toast.makeText(getApplicationContext(),"Chosen Demo.",Toast.LENGTH_LONG).show();
             }
             else {
-                BluetoothDeviceManager.getInstance().setDevice(nearbyDiscoverableDevices.get(discoveredDeviceChoice));
+                new ConnectBT().execute();
             }
             mEyeGestureManager.unregister(winkGesture, mWinkGestureListener);
             mBluetoothAdapter.cancelDiscovery();
             startActivity(intent);
+        }
+    }
+
+    private class ConnectBT extends AsyncTask<Void, Void, Void>  // UI thread
+    {
+        private boolean ConnectSuccess = true; //if it's here, it's almost connected
+
+        @Override
+        protected Void doInBackground(Void... devices) //while the progress dialog is shown, the connection is done in background
+        {
+            try
+            {
+                if (btSocket == null)
+                {
+                    myBluetooth = android.bluetooth.BluetoothAdapter.getDefaultAdapter();//get the mobile bluetooth device
+//                    BluetoothDevice beagleBoneDevice = myBluetooth.getRemoteDevice((nearbyDiscoverableDevices.get(discoveredDeviceChoice).getAddress()));//connects to the device's address and checks if it's available
+                    BluetoothDevice beagleBoneDevice = nearbyDiscoverableDevices.get(discoveredDeviceChoice);//connects to the device's address and checks if it's available
+                    btSocket = beagleBoneDevice.createInsecureRfcommSocketToServiceRecord(myUUID);//create a RFCOMM (SPP) connection
+                    android.bluetooth.BluetoothAdapter.getDefaultAdapter().cancelDiscovery();
+                    btSocket.connect();//start connection
+                }
+            }
+            catch (Exception e)
+            {
+                Log.e(TAG, "failed in AsyncTask" + e.getMessage(), e);
+                ConnectSuccess = false;//if the try failed, you can check the exception here
+            }
+            return null;
+        }
+        @Override
+        protected void onPostExecute(Void result) //after the doInBackground, it checks if everything went fine
+        {
+            super.onPostExecute(result);
+
+            if (!ConnectSuccess)
+            {
+                Toast.makeText(getApplicationContext(),"Connection Failed. Is it a SPP Bluetooth? Try again.",Toast.LENGTH_LONG).show();
+                finish();
+            }
+            else
+            {
+                Toast.makeText(getApplicationContext(),"Connection Success.",Toast.LENGTH_LONG).show();
+            }
+
         }
     }
 }
